@@ -1,0 +1,265 @@
+<template>
+    <div class="p_map">
+        <div id="info">&nbsp;</div>
+        <div id="map" class="map"></div>
+    </div>
+</template>
+
+<script lang="ts">
+import 'ol/ol.css'
+import Map from 'ol/Map'
+import View from 'ol/View'
+import GeoJSON from 'ol/format/GeoJSON'
+import VectorImageLayer from 'ol/layer/VectorImage'
+import VectorLayer from 'ol/layer/Vector'
+import VectorSource from 'ol/source/Vector'
+import { Fill, Stroke, Style, Text } from 'ol/style'
+
+import { Component, Prop, Vue } from 'vue-property-decorator'
+
+import geoJSON from './countries.geo.json'
+import Feature from 'ol/Feature'
+import { Layer } from 'ol/layer'
+import { fromLonLat } from 'ol/proj'
+import Point from 'ol/geom/Point'
+import Icon from 'ol/style/Icon'
+import CircleStyle from 'ol/style/Circle'
+
+type Patient = {
+    coordinates: Array<number>
+    dayOfSickness: number
+    strength: number
+}
+
+@Component
+export default class MyMap extends Vue {
+    map: Map
+    markerLayer: Layer
+    markerSource: VectorSource
+
+    countries: any = {}
+    interval = -1
+    infectedPeople: Array<Patient> = []
+
+    disease = {
+        // 1 per 1000 died per illness
+        lethality: 0.001,
+
+        // 1 patient can infect 2.5 healthy man per day
+        contagiousness: 2.5,
+
+        //illness period is 7 days
+        illnessPeriod: 7
+    }
+
+    mounted() {
+        this.leproInit()
+        this.init()
+
+        this.interval = setInterval(this.gameloop.bind(this), 1000)
+    }
+
+    destroyed() {
+        clearInterval(this.interval)
+    }
+
+    leproInit() {
+        let clr = 0
+
+        this.countries = geoJSON.features.reduce((acc: any, feature: any) => {
+            acc[feature.id] = {
+                color: `rgb(255, ${clr++ * 1.2}, 255)`
+            }
+            return acc
+        }, {})
+    }
+
+    addMarker(parent: Patient) {
+        const marker = new Feature({
+            geometry: new Point(parent.coordinates)
+        })
+
+        marker.setStyle(
+            new Style({
+                image: new CircleStyle({
+                    radius: 1,
+                    fill: new Fill({ color: 'red' })
+                })
+            })
+        )
+
+        console.count('прокаженные ')
+        this.markerSource.addFeature(marker)
+    }
+
+    init() {
+        const style = new Style({
+            fill: new Fill({
+                color: 'rgba(255, 255, 255, 0.6)'
+            }),
+            stroke: new Stroke({
+                color: '#319FD3',
+                width: 1
+            }),
+            text: new Text()
+        })
+
+        console.log(geoJSON.features)
+
+        // debugger
+
+        this.markerSource = new VectorSource({ features: [] })
+        this.markerLayer = new VectorLayer({ source: this.markerSource })
+
+        const map = new Map({
+            layers: [
+                new VectorImageLayer({
+                    imageRatio: 2,
+                    source: new VectorSource({
+                        url:
+                            'https://openlayers.org/en/latest/examples/data/geojson/countries.geojson#/',
+                        format: new GeoJSON()
+                    }),
+                    style: (feature: any) => {
+                        style.getText().setText(feature.get('name'))
+                        style.setFill(
+                            new Fill({
+                                color: this.countries[feature.id_].color
+                            })
+                        )
+
+                        return style
+                    }
+                }),
+                this.markerLayer
+            ],
+            target: 'map',
+            view: new View({
+                center: [0, 0],
+                zoom: 1
+            })
+        })
+
+        this.map = map
+        //@ts-ignore debug proxy
+        window._map = map
+
+        const featureOverlay = new VectorLayer({
+            source: new VectorSource(),
+            map: map,
+            style: new Style({
+                stroke: new Stroke({
+                    color: '#f00',
+                    width: 1
+                }),
+                fill: new Fill({
+                    color: 'rgba(255,0,0,0.1)'
+                })
+            })
+        })
+
+        let highlight: any
+        const displayFeatureInfo = function(pixel: any) {
+            map.getLayers()
+                .item(0)
+                //@ts-ignore
+                .getFeatures(pixel)
+                .then(function(features: any) {
+                    const feature =
+                        features.length > 0 ? features[0] : undefined
+
+                    const info = document.getElementById('info')
+                    if (info) {
+                        if (feature) {
+                            info.innerHTML =
+                                map.getCoordinateFromPixel(pixel) +
+                                '<br> ' +
+                                feature.getId() +
+                                ': ' +
+                                feature.get('name')
+                        } else {
+                            info.innerHTML =
+                                '&nbsp;' + map.getCoordinateFromPixel(pixel)
+                        }
+                    }
+
+                    if (feature !== highlight) {
+                        if (highlight) {
+                            featureOverlay.getSource().removeFeature(highlight)
+                        }
+                        if (feature) {
+                            featureOverlay.getSource().addFeature(feature)
+                        }
+                        highlight = feature
+                    }
+                })
+        }
+
+        map.on('pointermove', function(evt) {
+            if (!evt.dragging) {
+                displayFeatureInfo(evt.pixel)
+            }
+        })
+
+        map.on('click', evt => {
+            displayFeatureInfo(evt.pixel)
+
+            // createPatientZero
+            this.infectedPeople.push({
+                coordinates: map.getCoordinateFromPixel(evt.pixel),
+                strength: 1,
+                dayOfSickness: 1
+            })
+        })
+    }
+
+    infectPeople() {
+        const newInfectedPeople: Array<Patient> = []
+        const radius = 1000000
+        const contagiousness = Math.floor(this.disease.contagiousness)
+
+        this.infectedPeople.forEach((patient: Patient) => {
+            for (let i = 0; i < contagiousness; i++) {
+                if (Math.random() < 0.9) continue
+                const newPatient = {
+                    coordinates: [
+                        patient.coordinates[0] + (Math.random() - 0.5) * radius,
+                        patient.coordinates[1] + (Math.random() - 0.5) * radius
+                    ],
+                    strength: 1,
+                    dayOfSickness: 1
+                }
+
+                newInfectedPeople.push(newPatient)
+
+                this.addMarker(newPatient)
+            }
+
+            patient.strength++
+            patient.dayOfSickness++
+        })
+
+        this.infectedPeople = this.infectedPeople.concat(newInfectedPeople)
+    }
+
+    gameloop() {
+        console.log('tick')
+
+        this.infectPeople()
+    }
+}
+</script>
+
+<!-- Add "scoped" attribute to limit CSS to this component only -->
+<style scoped lang="scss">
+.map {
+    width: 100vw;
+    height: 100vh;
+}
+
+#info {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+}
+</style>
