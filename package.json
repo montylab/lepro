@@ -48,12 +48,16 @@
       "@vue/prettier/@typescript-eslint"
     ],
     "parserOptions": {
-      "ecmaVersion": 2020
+      "ecmaVersion": 2020,
+        "ecmaFeatures": {
+          "jsx": false
+        }
     },
     "rules": {
       "no-debugger": 1,
       "@typescript-eslint/no-explicit-any": 0,
-      "@typescript-eslint/ban-ts-ignore": 0
+      "@typescript-eslint/ban-ts-ignore": 0,
+      "@typescript-eslint/no-use-before-define": 0
     }
   },
   "prettier": {
