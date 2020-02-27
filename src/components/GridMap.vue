@@ -160,7 +160,8 @@ export default class GridMap extends Vue {
     waterify(level = 0.33) {
         this.vectorMap((cell: Cell) => {
             if (cell.level < level) {
-                cell.type = 'water'
+                //cell.type = 'water'
+                cell.level = 0
             }
             return cell
         })
@@ -176,7 +177,9 @@ export default class GridMap extends Vue {
 
     // square-diamond
     generateGridLevel3() {
-        const maxRandomDeviation = 0.125
+        const maxRandomDeviation = 1
+        const gridDiagonalDistance =
+            (this.gridSize.x ** 2 + this.gridSize.y ** 2) ** 0.5
 
         // initial 4 points
         for (let x = 0; x < this.gridSize.x; x++) {
@@ -192,10 +195,10 @@ export default class GridMap extends Vue {
                 }
             }
         }
-        this.grid[0][0].level = 0.4
-        this.grid[this.gridSize.x - 1][0].level = 0.2
-        this.grid[this.gridSize.x - 1][this.gridSize.y - 1].level = 0.8
-        this.grid[0][this.gridSize.y - 1].level = 0.6
+        this.grid[0][0].level = 0.5
+        this.grid[this.gridSize.x - 1][0].level = 0.5
+        this.grid[this.gridSize.x - 1][this.gridSize.y - 1].level = 0.5
+        this.grid[0][this.gridSize.y - 1].level = 0.5
 
         const averageVector = (pArray: Vector[]): Vector => {
             const sum = pArray.reduce(
@@ -226,13 +229,28 @@ export default class GridMap extends Vue {
         }
 
         const averageLevel = (pArray: Vector[]): number => {
+            let cnt = 0
             return (
                 pArray.reduce((acc, p) => {
+                    cnt += Math.ceil(this.grid[p.x][p.y].level)
                     acc += this.grid[p.x][p.y].level
                     return acc
-                }, 0) / pArray.length
+                }, 0) / Math.max(1, cnt)
             )
         }
+
+        const vectorDistance = (p1: Vector, p2: Vector) => {
+            return ((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2) ** 0.5
+        }
+
+        const normalize = (n: number) => Math.min(Math.max(0, n), 1)
+        const randomPlusMinus = () => 0.5 - Math.random()
+
+        const displace = (pArray: Vector[]) =>
+            normalize(
+                averageLevel(pArray) +
+                    (randomPlusMinus() * averageLevel(pArray)) / 2
+            )
 
         const diamond = (
             grid: Cell[][],
@@ -241,19 +259,17 @@ export default class GridMap extends Vue {
             p3: Vector,
             p4: Vector
         ) => {
-            const p5 = averageVector([p1, p3])
             if (p1.x + 1 === p2.x) return
+            const p5 = averageVector([p1, p3])
+
+            // if (grid[p5.x][p5.y].level === 0) {
+            //console.count('callstack')
             grid[p5.x][p5.y].level =
-                averageLevel([p1, p2, p3, p4]) +
-                randomPlusMinus() * maxRandomDeviation
+                grid[p5.x][p5.y].level || displace([p1, p2, p3, p4])
+            // }
 
-            //setTimeout(() => {
             square(grid, p1, p2, p3, p4, p5)
-            //}, 100)
         }
-
-        const normalize = (n: number) => Math.min(Math.max(0, n), 1)
-        const randomPlusMinus = () => 0.5 - Math.random()
 
         const square = (
             grid: Cell[][],
@@ -273,22 +289,14 @@ export default class GridMap extends Vue {
             const op8 = oppositeVector(p5, p8)
             const op9 = oppositeVector(p5, p9)
 
-            grid[p6.x][p6.y].level = normalize(
-                averageLevel([p1, p2, p5, op6]) +
-                    randomPlusMinus() * maxRandomDeviation
-            )
-            grid[p7.x][p7.y].level = normalize(
-                averageLevel([p2, p3, p5, op7]) +
-                    randomPlusMinus() * maxRandomDeviation
-            )
-            grid[p8.x][p8.y].level = normalize(
-                averageLevel([p3, p4, p5, op8]) +
-                    randomPlusMinus() * maxRandomDeviation
-            )
-            grid[p9.x][p9.y].level = normalize(
-                averageLevel([p4, p1, p5, op9]) +
-                    randomPlusMinus() * maxRandomDeviation
-            )
+            grid[p6.x][p6.y].level =
+                grid[p6.x][p6.y].level || displace([p1, p2, p5, op6])
+            grid[p7.x][p7.y].level =
+                grid[p7.x][p7.y].level || displace([p2, p3, p5, op7])
+            grid[p8.x][p8.y].level =
+                grid[p8.x][p8.y].level || displace([p3, p4, p5, op8])
+            grid[p9.x][p9.y].level =
+                grid[p9.x][p9.y].level || displace([p4, p1, p5, op9])
 
             diamond(grid, p1, p6, p5, p9)
             diamond(grid, p6, p2, p7, p5)
@@ -296,7 +304,6 @@ export default class GridMap extends Vue {
             diamond(grid, p9, p5, p8, p4)
         }
 
-        console.time('map')
         diamond(
             this.grid,
             { x: 0, y: 0 },
@@ -304,14 +311,13 @@ export default class GridMap extends Vue {
             { x: this.gridSize.x - 1, y: this.gridSize.y - 1 },
             { x: 0, y: this.gridSize.y - 1 }
         )
-        console.timeEnd('map')
 
         this.vectorMap((cell: Cell) => {
-            cell.level = cell.level ** 1.5
+            cell.level = cell.level ** 2
             return cell
         })
 
-        //this.waterify(0.25)
+        this.waterify(0.25)
     }
 
     gameloop() {
